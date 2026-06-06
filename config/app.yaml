@@ -1,0 +1,10 @@
+server:
+  addr: ":8889"
+
+database:
+  driver: sqlite3
+  dsn: data/hz-server.db
+
+starrocks:
+  driver: sqlite3
+  dsn: data/starrocks.db
