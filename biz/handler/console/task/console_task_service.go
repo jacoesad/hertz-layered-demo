@@ -11,6 +11,7 @@ import (
 	task "hz-server/biz/model/console/task"
 	internalapp "hz-server/internal/app"
 	taskdomain "hz-server/internal/task/domain"
+	taskservice "hz-server/internal/task/service"
 )
 
 // GetTask .
@@ -39,5 +40,41 @@ func GetTask(ctx context.Context, c *app.RequestContext) {
 		Code:    consts.StatusOK,
 		Message: "ok",
 		Data:    toConsoleTaskInfo(item),
+	})
+}
+
+// StartTask .
+// @router /console/v1/tasks/:task_id/start [POST]
+func StartTask(ctx context.Context, c *app.RequestContext) {
+	var err error
+	var req task.StartTaskRequest
+	err = c.BindAndValidate(&req)
+	if err != nil {
+		c.String(consts.StatusBadRequest, err.Error())
+		return
+	}
+
+	taskService := internalapp.MustDefault().TaskService
+	result, err := taskService.StartTask(ctx, taskservice.StartTaskInput{
+		TenantID: req.TenantID,
+		TaskID:   req.TaskID,
+	})
+	if err != nil {
+		if errors.Is(err, taskdomain.ErrTaskNotFound) {
+			c.JSON(consts.StatusNotFound, &task.StartTaskResponse{Code: consts.StatusNotFound, Message: "task not found"})
+			return
+		}
+		if errors.Is(err, taskdomain.ErrTaskNotStartable) {
+			c.JSON(consts.StatusConflict, &task.StartTaskResponse{Code: consts.StatusConflict, Message: "task is not startable"})
+			return
+		}
+		c.JSON(consts.StatusInternalServerError, &task.StartTaskResponse{Code: consts.StatusInternalServerError, Message: "internal server error"})
+		return
+	}
+
+	c.JSON(consts.StatusOK, &task.StartTaskResponse{
+		Code:    consts.StatusOK,
+		Message: "ok",
+		Data:    toStartTaskResult(result),
 	})
 }

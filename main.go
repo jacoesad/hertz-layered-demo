@@ -11,6 +11,7 @@ import (
 	"hz-server/internal/app"
 	"hz-server/internal/config"
 	"hz-server/internal/database"
+	"hz-server/internal/downstream"
 )
 
 func main() {
@@ -28,7 +29,12 @@ func main() {
 	}
 	defer ds.Close()
 
-	container, err := app.NewContainer(ds)
+	downstreamClients, err := downstream.Init(cfg.Downstream)
+	if err != nil {
+		log.Fatalf("init downstream clients: %v", err)
+	}
+
+	container, err := app.NewContainer(ds, downstreamClients)
 	if err != nil {
 		log.Fatalf("init container: %v", err)
 	}

@@ -19,6 +19,24 @@ struct GetTaskResponse {
     3: optional ConsoleTaskInfo data (api.body="data")
 }
 
+struct StartTaskRequest {
+    1: required string tenant_id (api.query="tenant_id")
+    2: required i64 task_id (api.path="task_id")
+}
+
+struct StartTaskResult {
+    1: bool accepted (api.body="accepted")
+    2: string job_id (api.body="job_id")
+    3: string message (api.body="message")
+}
+
+struct StartTaskResponse {
+    1: i32 code (api.body="code")
+    2: string message (api.body="message")
+    3: optional StartTaskResult data (api.body="data")
+}
+
 service ConsoleTaskService {
     GetTaskResponse GetTask(1: GetTaskRequest req) (api.get="/console/v1/tasks/:task_id")
+    StartTaskResponse StartTask(1: StartTaskRequest req) (api.post="/console/v1/tasks/:task_id/start")
 }

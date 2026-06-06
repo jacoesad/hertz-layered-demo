@@ -14,3 +14,11 @@ func toConsoleTaskInfo(item *domain.Task) *task.ConsoleTaskInfo {
 		Owner:    item.Owner,
 	}
 }
+
+func toStartTaskResult(result *domain.StartTaskResult) *task.StartTaskResult {
+	return &task.StartTaskResult{
+		Accepted: result.Accepted,
+		JobID:    result.JobID,
+		Message:  result.Message,
+	}
+}

@@ -24,6 +24,8 @@ func Register(r *server.Hertz) {
 			{
 				_tasks := _v1.Group("/tasks", _tasksMw()...)
 				_tasks.GET("/:task_id", append(_gettaskMw(), task.GetTask)...)
+				_task_id := _tasks.Group("/:task_id", _task_idMw()...)
+				_task_id.POST("/start", append(_starttaskMw(), task.StartTask)...)
 			}
 		}
 	}

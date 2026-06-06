@@ -8,3 +8,8 @@ database:
 starrocks:
   driver: sqlite3
   dsn: data/starrocks.db
+
+downstream:
+  task_runner:
+    endpoint: http://127.0.0.1:9000
+    timeout_ms: 3000

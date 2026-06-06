@@ -30,3 +30,13 @@ func _gettaskMw() []app.HandlerFunc {
 	// your code...
 	return nil
 }
+
+func _task_idMw() []app.HandlerFunc {
+	// your code...
+	return nil
+}
+
+func _starttaskMw() []app.HandlerFunc {
+	// your code...
+	return nil
+}

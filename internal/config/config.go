@@ -8,9 +8,10 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig   `yaml:"server"`
-	Database  DatabaseConfig `yaml:"database"`
-	StarRocks DatabaseConfig `yaml:"starrocks"`
+	Server     ServerConfig     `yaml:"server"`
+	Database   DatabaseConfig   `yaml:"database"`
+	StarRocks  DatabaseConfig   `yaml:"starrocks"`
+	Downstream DownstreamConfig `yaml:"downstream"`
 }
 
 type ServerConfig struct {
@@ -20,6 +21,15 @@ type ServerConfig struct {
 type DatabaseConfig struct {
 	Driver string `yaml:"driver"`
 	DSN    string `yaml:"dsn"`
+}
+
+type DownstreamConfig struct {
+	TaskRunner TaskRunnerConfig `yaml:"task_runner"`
+}
+
+type TaskRunnerConfig struct {
+	Endpoint  string `yaml:"endpoint"`
+	TimeoutMS int    `yaml:"timeout_ms"`
 }
 
 var current *Config
@@ -68,6 +78,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.StarRocks.DSN == "" {
 		return nil, fmt.Errorf("starrocks.dsn is required")
+	}
+	if cfg.Downstream.TaskRunner.Endpoint == "" {
+		return nil, fmt.Errorf("downstream.task_runner.endpoint is required")
+	}
+	if cfg.Downstream.TaskRunner.TimeoutMS <= 0 {
+		return nil, fmt.Errorf("downstream.task_runner.timeout_ms must be positive")
 	}
 	return &cfg, nil
 }
