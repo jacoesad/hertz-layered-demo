@@ -52,6 +52,90 @@ internal/subtask
 
 这样做的目的，是让 `console` 和 `openapi` 可以拥有不同的 IDL、路由、请求响应模型和 handler，但复用同一套内部业务能力。
 
+目录设计规则可以概括成几条：
+
+```text
+idl/service/<entry>          当前服务对外提供的接口协议，entry 例如 console、openapi
+idl/downstream/<system>      当前服务调用的下游协议，system 例如 task_runner
+
+biz/router                   hz 生成的路由注册代码
+biz/model                    hz 生成的 IDL 模型
+biz/client                   hz client 生成代码，只作为底层调用能力
+biz/handler                  hz handler 入口，保留在接口层，只做绑定、转换、调用 service、写响应
+
+internal/app                 应用装配层，集中创建 service/repo/client 并保存默认容器
+internal/config              配置读取和配置结构定义
+internal/database            外部数据源初始化，不承载业务规则
+internal/apperror            应用层错误码和错误消息的统一表达
+internal/downstream          下游 client 集合的统一初始化入口
+internal/<component>         横向组件，例如 logger、signature、middleware、observability
+
+internal/<domain>/domain     领域模型、领域规则、领域错误
+internal/<domain>/service    业务用例编排，定义所需 repo/client 接口，转换应用错误
+internal/<domain>/repo       仓储适配，把存储行模型转换成 domain 模型
+internal/<domain>/sqlstore   具体 SQL 执行和 database/sql 细节
+
+internal/<system>/client     某个下游系统的手写 adapter，包装 biz/client 生成代码
+```
+
+新增代码时优先按变化来源选择位置：
+
+```text
+新增一个对外接口入口        -> idl/service/<entry> + biz/handler/<entry>
+新增一个业务领域            -> internal/<domain>/{domain,service,repo,sqlstore}
+新增一个用例                -> internal/<domain>/service，必要时补 domain 规则和 repo 接口
+新增一个数据库访问          -> service 定义接口，repo/sqlstore 提供实现
+新增一个下游系统            -> idl/downstream/<system> + internal/<system>/client + internal/downstream
+新增一个应用级错误码        -> internal/apperror 常量，service 负责映射
+新增一个横向组件            -> internal/<component> + config + main/app 显式注入
+```
+
+不是每个 `internal` 子目录都代表一个业务领域。`task`、`subtask` 是领域目录；`app`、`config`、`database`、`downstream`、`apperror` 是横向基础设施或装配目录。领域目录内部才使用 `domain/service/repo/sqlstore` 这组分层。
+
+## 横向组件规划
+
+后续新增 middleware、签名、logger、metrics、tracing 这类组件时，先判断它属于哪种变化：
+
+```text
+只和 HTTP 请求入口有关      -> Hertz middleware
+只和业务用例有关            -> service 依赖的接口或参数
+只和下游调用有关            -> internal/<system>/client adapter
+跨入口、跨领域复用          -> internal/<component>
+需要配置或外部资源          -> config + main 初始化 + app/container 注入
+```
+
+推荐的规划方式是：
+
+```text
+internal/logger              logger 初始化、封装和接口定义
+internal/signature           签名算法、验签规则、签名错误
+internal/middleware          可复用的 Hertz middleware adapter
+internal/observability       metrics/tracing 等观测组件
+```
+
+`biz/router/**/middleware.go` 是 hz 生成的路由 middleware 挂载点。可以在这些函数里引用 `internal/middleware` 中的实现，但不要把复杂逻辑直接写在生成目录里：
+
+```text
+biz/router/**/middleware.go
+  -> internal/middleware.Auth(...)
+  -> internal/signature.Verifier
+```
+
+这样以后重新执行 `hz update` 时，生成目录只承担“挂载点”的角色，可复用逻辑仍然留在 `internal`。
+
+如果签名用于校验进入当前服务的 HTTP 请求，通常放在 `internal/signature` 定义规则，再由 `internal/middleware` 包装成 Hertz middleware。如果签名用于调用某个下游系统，优先放在对应的 `internal/<system>/client` adapter 内；多个下游共用同一套签名算法时，再把算法抽到 `internal/signature`。
+
+logger、metrics、tracing 这类组件如果需要配置或外部资源，也遵循同一条主线：
+
+```text
+config/app.yaml
+  -> config.Init
+  -> main 初始化 logger/metrics/tracing
+  -> app.NewContainer 注入 service 或 middleware
+```
+
+业务层不主动创建 logger、metrics client 或签名 client。service 如果需要记录业务日志或打点，接收一个接口；具体实现由 `main/app` 装配。这样组件可以替换，测试时也可以注入 fake 实现。
+
 ## Main 启动顺序
 
 `main.go` 是整个程序的装配入口。它负责读取配置、初始化外部资源、创建容器，最后启动 Hertz server。
@@ -260,7 +344,28 @@ biz/handler/openapi/subtask/assembler.go
 
 assembler 只做模型转换，不查数据库、不读配置、不放业务规则。
 
+各 handler 包里的 `service.go` 是为了适配 hz 生成的包级 handler 函数：
+
+```text
+biz/handler/console/task/service.go
+biz/handler/openapi/task/service.go
+biz/handler/console/subtask/service.go
+biz/handler/openapi/subtask/service.go
+```
+
+handler 函数通过本包的 `service()` helper 获取已经装配好的 service 实例。这样 `app.MustDefault()` 的使用被收敛在一个很小的地方，具体 handler 代码只关心“调用 service”，不用反复写容器获取逻辑。
+
 这样 `console` 可以返回内部字段，比如 `tenant_id`、`owner`、`assignee`；`openapi` 可以暴露更少字段。两者的外部协议可以变化，但内部 service 不需要跟着频繁变化。
+
+业务错误也在 service 层转换成应用层错误：
+
+```text
+domain/repo error
+  -> service 转成 internal/apperror.Error{Code, Message}
+  -> handler 统一写入 IDL response body
+```
+
+`BindAndValidate` 失败仍返回 HTTP 400，因为请求还没有进入用例层。进入 service 后的错误统一不使用 HTTP status 表达，handler 会返回 HTTP 200，并在响应体的 `code/message` 中表达结果。未映射的错误会被 `apperror.OrInternal` 兜底成 `code=50000`、`message="internal server error"`。
 
 ## 下游 Client 设计
 
@@ -314,6 +419,25 @@ idl/downstream/task_runner.thrift
 ```
 
 业务层不直接依赖 `biz/client/task_runner_service`，所以以后替换下游调用方式时，主要改 adapter 和装配代码。
+
+如果后续有多个下游，仍然按下游系统做一级目录，`client` 作为具体调用实现放在二级目录：
+
+```text
+internal/taskrunner/client
+internal/payment/client
+internal/notification/client
+```
+
+`internal/downstream` 继续作为统一装配入口，负责初始化多个下游客户端，并把它们组合成应用需要的下游依赖集合：
+
+```text
+internal/downstream
+  -> 初始化 taskrunner client
+  -> 初始化 payment client
+  -> 返回 downstream.Clients{TaskRunner, Payment}
+```
+
+这样 `downstream` 表达“外部依赖集合”，`internal/<downstream-system>/client` 表达“某个下游系统的具体调用实现”。
 
 ## IDL 和生成代码
 
@@ -370,6 +494,35 @@ script/hz_generate.sh init
 HZ_FORCE_INIT=1 script/hz_generate.sh init
 ```
 
+## 测试策略
+
+测试也按层选择，不要求每次都写大而全的集成测试。
+
+```text
+domain    测领域规则和边界条件，例如状态能不能流转、筛选条件是否合法
+service   用 fake repo/client 测用例编排、错误映射、依赖调用顺序
+repo      测存储行模型到 domain 模型的转换
+sqlstore  测 SQL 条件、分页、排序、空结果和数据库错误
+client    用 fake generated client 或 httptest 测下游请求转换和错误包装
+handler   测 BindAndValidate、DTO 转换、响应 code/message/data
+```
+
+当前已有示例：
+
+```text
+internal/task/domain/task_test.go
+internal/subtask/domain/subtask_test.go
+internal/taskrunner/client/client_test.go
+```
+
+常规验证命令：
+
+```bash
+go test ./...
+```
+
+如果只是改 README、注释或生成脚本说明，不需要跑测试；如果改了 IDL、handler、service、repo、sqlstore、client 中任意一层，至少跑一次 `go test ./...`。
+
 ## 配置和运行
 
 配置文件：
@@ -419,7 +572,8 @@ data/starrocks.db
 curl -s 'http://127.0.0.1:8889/console/v1/tasks/1001?tenant_id=tenant-a'
 curl -s -X POST 'http://127.0.0.1:8889/console/v1/tasks/1001/start?tenant_id=tenant-a'
 curl -s 'http://127.0.0.1:8889/openapi/v1/tasks/1001?tenant_id=tenant-a'
-curl -s 'http://127.0.0.1:8889/console/v1/subtasks?tenant_id=tenant-a'
+curl -s 'http://127.0.0.1:8889/console/v1/subtasks?tenant_id=tenant-a&task_id=1001'
+curl -s 'http://127.0.0.1:8889/console/v1/subtasks?tenant_id=tenant-a&subtask_type=metric'
 curl -s 'http://127.0.0.1:8889/console/v1/subtasks/5001?tenant_id=tenant-a'
 curl -s 'http://127.0.0.1:8889/openapi/v1/subtasks/5001?tenant_id=tenant-a'
 ```

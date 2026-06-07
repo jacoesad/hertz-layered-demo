@@ -3,6 +3,7 @@ package subtask
 import (
 	subtask "hz-server/biz/model/console/subtask"
 	"hz-server/internal/subtask/domain"
+	subtaskservice "hz-server/internal/subtask/service"
 )
 
 func toConsoleSubtaskInfo(item *domain.Subtask) *subtask.ConsoleSubtaskInfo {
@@ -22,4 +23,12 @@ func toConsoleSubtaskInfoList(items []*domain.Subtask) []*subtask.ConsoleSubtask
 		data = append(data, toConsoleSubtaskInfo(item))
 	}
 	return data
+}
+
+func toListSubtasksInput(req subtask.ListSubtasksRequest) subtaskservice.ListSubtasksInput {
+	return subtaskservice.ListSubtasksInput{
+		TenantID:    req.TenantID,
+		TaskID:      req.TaskID,
+		SubtaskType: req.SubtaskType,
+	}
 }

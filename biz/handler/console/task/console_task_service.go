@@ -4,14 +4,11 @@ package task
 
 import (
 	"context"
-	"errors"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	task "hz-server/biz/model/console/task"
-	internalapp "hz-server/internal/app"
-	taskdomain "hz-server/internal/task/domain"
-	taskservice "hz-server/internal/task/service"
+	"hz-server/internal/apperror"
 )
 
 // GetTask .
@@ -25,14 +22,10 @@ func GetTask(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 
-	taskService := internalapp.MustDefault().TaskService
-	item, err := taskService.GetTask(ctx, req.TenantID, req.TaskID)
+	item, err := service().GetTask(ctx, req.TenantID, req.TaskID)
 	if err != nil {
-		if errors.Is(err, taskdomain.ErrTaskNotFound) {
-			c.JSON(consts.StatusNotFound, &task.GetTaskResponse{Code: consts.StatusNotFound, Message: "task not found"})
-			return
-		}
-		c.JSON(consts.StatusInternalServerError, &task.GetTaskResponse{Code: consts.StatusInternalServerError, Message: "internal server error"})
+		appErr := apperror.OrInternal(err)
+		c.JSON(consts.StatusOK, &task.GetTaskResponse{Code: appErr.Code, Message: appErr.Message})
 		return
 	}
 
@@ -54,21 +47,10 @@ func StartTask(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 
-	taskService := internalapp.MustDefault().TaskService
-	result, err := taskService.StartTask(ctx, taskservice.StartTaskInput{
-		TenantID: req.TenantID,
-		TaskID:   req.TaskID,
-	})
+	result, err := service().StartTask(ctx, toStartTaskInput(req))
 	if err != nil {
-		if errors.Is(err, taskdomain.ErrTaskNotFound) {
-			c.JSON(consts.StatusNotFound, &task.StartTaskResponse{Code: consts.StatusNotFound, Message: "task not found"})
-			return
-		}
-		if errors.Is(err, taskdomain.ErrTaskNotStartable) {
-			c.JSON(consts.StatusConflict, &task.StartTaskResponse{Code: consts.StatusConflict, Message: "task is not startable"})
-			return
-		}
-		c.JSON(consts.StatusInternalServerError, &task.StartTaskResponse{Code: consts.StatusInternalServerError, Message: "internal server error"})
+		appErr := apperror.OrInternal(err)
+		c.JSON(consts.StatusOK, &task.StartTaskResponse{Code: appErr.Code, Message: appErr.Message})
 		return
 	}
 

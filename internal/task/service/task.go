@@ -2,8 +2,15 @@ package service
 
 import (
 	"context"
+	"errors"
 
+	"hz-server/internal/apperror"
 	"hz-server/internal/task/domain"
+)
+
+const (
+	CodeTaskNotFound     int32 = 10001
+	CodeTaskNotStartable int32 = 10002
 )
 
 type Repository interface {
@@ -37,16 +44,30 @@ func New(repo Repository, taskRunner TaskRunner) Service {
 }
 
 func (s *service) GetTask(ctx context.Context, tenantID string, taskID int64) (*domain.Task, error) {
-	return s.repo.FindByTenantAndID(ctx, tenantID, taskID)
+	task, err := s.repo.FindByTenantAndID(ctx, tenantID, taskID)
+	if err != nil {
+		return nil, toAppError(err)
+	}
+	return task, nil
 }
 
 func (s *service) StartTask(ctx context.Context, input StartTaskInput) (*domain.StartTaskResult, error) {
 	task, err := s.repo.FindByTenantAndID(ctx, input.TenantID, input.TaskID)
 	if err != nil {
-		return nil, err
+		return nil, toAppError(err)
 	}
-	if task.Status == "done" {
-		return nil, domain.ErrTaskNotStartable
+	if err := task.EnsureStartable(); err != nil {
+		return nil, toAppError(err)
 	}
 	return s.taskRunner.StartTask(ctx, input)
+}
+
+func toAppError(err error) error {
+	if errors.Is(err, domain.ErrTaskNotFound) {
+		return apperror.New(CodeTaskNotFound, "task not found", err)
+	}
+	if errors.Is(err, domain.ErrTaskNotStartable) {
+		return apperror.New(CodeTaskNotStartable, "task is not startable", err)
+	}
+	return err
 }

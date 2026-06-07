@@ -820,7 +820,9 @@ func (p *GetSubtaskResponse) String() string {
 }
 
 type ListSubtasksRequest struct {
-	TenantID string `thrift:"tenant_id,1,required" json:"tenant_id,required" query:"tenant_id,required"`
+	TenantID    string `thrift:"tenant_id,1,required" json:"tenant_id,required" query:"tenant_id,required"`
+	TaskID      *int64 `thrift:"task_id,2,optional" json:"task_id,omitempty" query:"task_id"`
+	SubtaskType string `thrift:"subtask_type,3,optional" json:"subtask_type,omitempty" query:"subtask_type"`
 }
 
 func NewListSubtasksRequest() *ListSubtasksRequest {
@@ -834,8 +836,25 @@ func (p *ListSubtasksRequest) GetTenantID() (v string) {
 	return p.TenantID
 }
 
+func (p *ListSubtasksRequest) GetTaskID() (v int64) {
+	if !p.IsSetTaskID() {
+		return 0
+	}
+	return *p.TaskID
+}
+
+func (p *ListSubtasksRequest) GetSubtaskType() (v string) {
+	return p.SubtaskType
+}
+
+func (p *ListSubtasksRequest) IsSetTaskID() bool {
+	return p.TaskID != nil
+}
+
 var fieldIDToName_ListSubtasksRequest = map[int16]string{
 	1: "tenant_id",
+	2: "task_id",
+	3: "subtask_type",
 }
 
 func (p *ListSubtasksRequest) Read(iprot thrift.TProtocol) (err error) {
@@ -864,6 +883,22 @@ func (p *ListSubtasksRequest) Read(iprot thrift.TProtocol) (err error) {
 					goto ReadFieldError
 				}
 				issetTenantID = true
+			} else if err = iprot.Skip(fieldTypeId); err != nil {
+				goto SkipFieldError
+			}
+		case 2:
+			if fieldTypeId == thrift.I64 {
+				if err = p.ReadField2(iprot); err != nil {
+					goto ReadFieldError
+				}
+			} else if err = iprot.Skip(fieldTypeId); err != nil {
+				goto SkipFieldError
+			}
+		case 3:
+			if fieldTypeId == thrift.STRING {
+				if err = p.ReadField3(iprot); err != nil {
+					goto ReadFieldError
+				}
 			} else if err = iprot.Skip(fieldTypeId); err != nil {
 				goto SkipFieldError
 			}
@@ -913,6 +948,28 @@ func (p *ListSubtasksRequest) ReadField1(iprot thrift.TProtocol) error {
 	p.TenantID = _field
 	return nil
 }
+func (p *ListSubtasksRequest) ReadField2(iprot thrift.TProtocol) error {
+
+	var _field int64
+	if v, err := iprot.ReadI64(); err != nil {
+		return err
+	} else {
+		_field = v
+	}
+	p.TaskID = &_field
+	return nil
+}
+func (p *ListSubtasksRequest) ReadField3(iprot thrift.TProtocol) error {
+
+	var _field string
+	if v, err := iprot.ReadString(); err != nil {
+		return err
+	} else {
+		_field = v
+	}
+	p.SubtaskType = _field
+	return nil
+}
 
 func (p *ListSubtasksRequest) Write(oprot thrift.TProtocol) (err error) {
 	var fieldId int16
@@ -923,6 +980,18 @@ func (p *ListSubtasksRequest) Write(oprot thrift.TProtocol) (err error) {
 		if err = p.writeField1(oprot); err != nil {
 			fieldId = 1
 			goto WriteFieldError
+		}
+		if p.IsSetTaskID() {
+			if err = p.writeField2(oprot); err != nil {
+				fieldId = 2
+				goto WriteFieldError
+			}
+		}
+		if p.SubtaskType != "" {
+			if err = p.writeField3(oprot); err != nil {
+				fieldId = 3
+				goto WriteFieldError
+			}
 		}
 	}
 	if err = oprot.WriteFieldStop(); err != nil {
@@ -957,6 +1026,40 @@ WriteFieldBeginError:
 	return thrift.PrependError(fmt.Sprintf("%T write field 1 begin error: ", p), err)
 WriteFieldEndError:
 	return thrift.PrependError(fmt.Sprintf("%T write field 1 end error: ", p), err)
+}
+
+func (p *ListSubtasksRequest) writeField2(oprot thrift.TProtocol) (err error) {
+	if err = oprot.WriteFieldBegin("task_id", thrift.I64, 2); err != nil {
+		goto WriteFieldBeginError
+	}
+	if err := oprot.WriteI64(*p.TaskID); err != nil {
+		return err
+	}
+	if err = oprot.WriteFieldEnd(); err != nil {
+		goto WriteFieldEndError
+	}
+	return nil
+WriteFieldBeginError:
+	return thrift.PrependError(fmt.Sprintf("%T write field 2 begin error: ", p), err)
+WriteFieldEndError:
+	return thrift.PrependError(fmt.Sprintf("%T write field 2 end error: ", p), err)
+}
+
+func (p *ListSubtasksRequest) writeField3(oprot thrift.TProtocol) (err error) {
+	if err = oprot.WriteFieldBegin("subtask_type", thrift.STRING, 3); err != nil {
+		goto WriteFieldBeginError
+	}
+	if err := oprot.WriteString(p.SubtaskType); err != nil {
+		return err
+	}
+	if err = oprot.WriteFieldEnd(); err != nil {
+		goto WriteFieldEndError
+	}
+	return nil
+WriteFieldBeginError:
+	return thrift.PrependError(fmt.Sprintf("%T write field 3 begin error: ", p), err)
+WriteFieldEndError:
+	return thrift.PrependError(fmt.Sprintf("%T write field 3 end error: ", p), err)
 }
 
 func (p *ListSubtasksRequest) String() string {

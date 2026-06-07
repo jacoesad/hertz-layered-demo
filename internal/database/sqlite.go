@@ -118,6 +118,7 @@ func migrate(ctx context.Context, db *sql.DB) error {
 			id INTEGER NOT NULL,
 			tenant_id TEXT NOT NULL,
 			task_id INTEGER NOT NULL,
+			subtask_type TEXT NOT NULL DEFAULT 'manual',
 			title TEXT NOT NULL,
 			status TEXT NOT NULL,
 			assignee TEXT NOT NULL,
@@ -129,6 +130,39 @@ func migrate(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("migrate database: %w", err)
 		}
 	}
+	if err := ensureSubtaskTypeColumn(ctx, db); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureSubtaskTypeColumn(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(subtasks)`)
+	if err != nil {
+		return fmt.Errorf("inspect subtasks schema: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("scan subtasks schema: %w", err)
+		}
+		if name == "subtask_type" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate subtasks schema: %w", err)
+	}
+
+	if _, err := db.ExecContext(ctx, `ALTER TABLE subtasks ADD COLUMN subtask_type TEXT NOT NULL DEFAULT 'manual'`); err != nil {
+		return fmt.Errorf("add subtasks.subtask_type: %w", err)
+	}
 	return nil
 }
 
@@ -136,9 +170,12 @@ func seed(ctx context.Context, db *sql.DB) error {
 	statements := []string{
 		`INSERT OR IGNORE INTO tasks (id, tenant_id, title, status, owner) VALUES (1001, 'tenant-a', 'Prepare onboarding', 'running', 'Alice')`,
 		`INSERT OR IGNORE INTO tasks (id, tenant_id, title, status, owner) VALUES (1001, 'tenant-b', 'Sync external ticket', 'done', 'Bob')`,
-		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, title, status, assignee) VALUES (5001, 'tenant-a', 1001, 'Collect documents', 'todo', 'Cindy')`,
-		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, title, status, assignee) VALUES (5002, 'tenant-a', 1001, 'Review checklist', 'running', 'Evan')`,
-		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, title, status, assignee) VALUES (5001, 'tenant-b', 1001, 'Confirm webhook', 'done', 'David')`,
+		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, subtask_type, title, status, assignee) VALUES (5001, 'tenant-a', 1001, 'manual', 'Collect documents', 'todo', 'Cindy')`,
+		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, subtask_type, title, status, assignee) VALUES (5002, 'tenant-a', 1001, 'review', 'Review checklist', 'running', 'Evan')`,
+		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, subtask_type, title, status, assignee) VALUES (5001, 'tenant-b', 1001, 'webhook', 'Confirm webhook', 'done', 'David')`,
+		`UPDATE subtasks SET subtask_type = 'manual' WHERE tenant_id = 'tenant-a' AND id = 5001`,
+		`UPDATE subtasks SET subtask_type = 'review' WHERE tenant_id = 'tenant-a' AND id = 5002`,
+		`UPDATE subtasks SET subtask_type = 'webhook' WHERE tenant_id = 'tenant-b' AND id = 5001`,
 	}
 	for _, stmt := range statements {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
@@ -150,9 +187,11 @@ func seed(ctx context.Context, db *sql.DB) error {
 
 func seedStarRocks(ctx context.Context, db *sql.DB) error {
 	statements := []string{
-		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, title, status, assignee) VALUES (9001, 'tenant-a', 1001, 'StarRocks aggregated subtask count', 'ready', 'analytics')`,
-		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, title, status, assignee) VALUES (9002, 'tenant-a', 1001, 'StarRocks latency snapshot', 'ready', 'analytics')`,
-		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, title, status, assignee) VALUES (9001, 'tenant-b', 1001, 'StarRocks external sync summary', 'ready', 'analytics')`,
+		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, subtask_type, title, status, assignee) VALUES (9001, 'tenant-a', 1001, 'metric', 'StarRocks aggregated subtask count', 'ready', 'analytics')`,
+		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, subtask_type, title, status, assignee) VALUES (9002, 'tenant-a', 1001, 'metric', 'StarRocks latency snapshot', 'ready', 'analytics')`,
+		`INSERT OR IGNORE INTO subtasks (id, tenant_id, task_id, subtask_type, title, status, assignee) VALUES (9001, 'tenant-b', 1001, 'sync', 'StarRocks external sync summary', 'ready', 'analytics')`,
+		`UPDATE subtasks SET subtask_type = 'metric' WHERE tenant_id = 'tenant-a' AND id IN (9001, 9002)`,
+		`UPDATE subtasks SET subtask_type = 'sync' WHERE tenant_id = 'tenant-b' AND id = 9001`,
 	}
 	for _, stmt := range statements {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {

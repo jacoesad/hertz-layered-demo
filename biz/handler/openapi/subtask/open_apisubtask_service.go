@@ -4,13 +4,11 @@ package subtask
 
 import (
 	"context"
-	"errors"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	subtask "hz-server/biz/model/openapi/subtask"
-	internalapp "hz-server/internal/app"
-	subtaskdomain "hz-server/internal/subtask/domain"
+	"hz-server/internal/apperror"
 )
 
 // QuerySubtask .
@@ -24,14 +22,10 @@ func QuerySubtask(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 
-	subtaskService := internalapp.MustDefault().SubtaskService
-	item, err := subtaskService.GetSubtask(ctx, req.TenantID, req.SubtaskID)
+	item, err := service().GetSubtask(ctx, req.TenantID, req.SubtaskID)
 	if err != nil {
-		if errors.Is(err, subtaskdomain.ErrSubtaskNotFound) {
-			c.JSON(consts.StatusNotFound, &subtask.QuerySubtaskResponse{Code: consts.StatusNotFound, Message: "subtask not found"})
-			return
-		}
-		c.JSON(consts.StatusInternalServerError, &subtask.QuerySubtaskResponse{Code: consts.StatusInternalServerError, Message: "internal server error"})
+		appErr := apperror.OrInternal(err)
+		c.JSON(consts.StatusOK, &subtask.QuerySubtaskResponse{Code: appErr.Code, Message: appErr.Message})
 		return
 	}
 

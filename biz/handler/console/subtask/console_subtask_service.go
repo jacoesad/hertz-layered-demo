@@ -4,13 +4,11 @@ package subtask
 
 import (
 	"context"
-	"errors"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	subtask "hz-server/biz/model/console/subtask"
-	internalapp "hz-server/internal/app"
-	subtaskdomain "hz-server/internal/subtask/domain"
+	"hz-server/internal/apperror"
 )
 
 // GetSubtask .
@@ -24,14 +22,10 @@ func GetSubtask(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 
-	subtaskService := internalapp.MustDefault().SubtaskService
-	item, err := subtaskService.GetSubtask(ctx, req.TenantID, req.SubtaskID)
+	item, err := service().GetSubtask(ctx, req.TenantID, req.SubtaskID)
 	if err != nil {
-		if errors.Is(err, subtaskdomain.ErrSubtaskNotFound) {
-			c.JSON(consts.StatusNotFound, &subtask.GetSubtaskResponse{Code: consts.StatusNotFound, Message: "subtask not found"})
-			return
-		}
-		c.JSON(consts.StatusInternalServerError, &subtask.GetSubtaskResponse{Code: consts.StatusInternalServerError, Message: "internal server error"})
+		appErr := apperror.OrInternal(err)
+		c.JSON(consts.StatusOK, &subtask.GetSubtaskResponse{Code: appErr.Code, Message: appErr.Message})
 		return
 	}
 
@@ -53,12 +47,12 @@ func ListSubtasks(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 
-	subtaskService := internalapp.MustDefault().SubtaskService
-	items, err := subtaskService.ListSubtasks(ctx, req.TenantID)
+	items, err := service().ListSubtasks(ctx, toListSubtasksInput(req))
 	if err != nil {
-		c.JSON(consts.StatusInternalServerError, &subtask.ListSubtasksResponse{
-			Code:    consts.StatusInternalServerError,
-			Message: "internal server error",
+		appErr := apperror.OrInternal(err)
+		c.JSON(consts.StatusOK, &subtask.ListSubtasksResponse{
+			Code:    appErr.Code,
+			Message: appErr.Message,
 		})
 		return
 	}

@@ -4,13 +4,11 @@ package task
 
 import (
 	"context"
-	"errors"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	task "hz-server/biz/model/openapi/task"
-	internalapp "hz-server/internal/app"
-	taskdomain "hz-server/internal/task/domain"
+	"hz-server/internal/apperror"
 )
 
 // QueryTask .
@@ -24,14 +22,10 @@ func QueryTask(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 
-	taskService := internalapp.MustDefault().TaskService
-	item, err := taskService.GetTask(ctx, req.TenantID, req.TaskID)
+	item, err := service().GetTask(ctx, req.TenantID, req.TaskID)
 	if err != nil {
-		if errors.Is(err, taskdomain.ErrTaskNotFound) {
-			c.JSON(consts.StatusNotFound, &task.QueryTaskResponse{Code: consts.StatusNotFound, Message: "task not found"})
-			return
-		}
-		c.JSON(consts.StatusInternalServerError, &task.QueryTaskResponse{Code: consts.StatusInternalServerError, Message: "internal server error"})
+		appErr := apperror.OrInternal(err)
+		c.JSON(consts.StatusOK, &task.QueryTaskResponse{Code: appErr.Code, Message: appErr.Message})
 		return
 	}
 

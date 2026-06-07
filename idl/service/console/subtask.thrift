@@ -22,6 +22,8 @@ struct GetSubtaskResponse {
 
 struct ListSubtasksRequest {
     1: required string tenant_id (api.query="tenant_id")
+    2: optional i64 task_id (api.query="task_id")
+    3: optional string subtask_type (api.query="subtask_type")
 }
 
 struct ListSubtasksResponse {

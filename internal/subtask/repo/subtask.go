@@ -7,17 +7,18 @@ import (
 )
 
 type Row struct {
-	ID       int64
-	TenantID string
-	TaskID   int64
-	Title    string
-	Status   string
-	Assignee string
+	ID          int64
+	TenantID    string
+	TaskID      int64
+	SubtaskType string
+	Title       string
+	Status      string
+	Assignee    string
 }
 
 type SQL interface {
 	SelectByTenantAndID(ctx context.Context, tenantID string, subtaskID int64) (*Row, error)
-	SelectByTenant(ctx context.Context, tenantID string) ([]Row, error)
+	SelectByCriteria(ctx context.Context, criteria domain.ListCriteria) ([]Row, error)
 }
 
 type Repository struct {
@@ -38,14 +39,15 @@ func (r *Repository) FindByTenantAndID(ctx context.Context, tenantID string, sub
 		ID:       row.ID,
 		TenantID: row.TenantID,
 		TaskID:   row.TaskID,
+		Type:     row.SubtaskType,
 		Title:    row.Title,
 		Status:   row.Status,
 		Assignee: row.Assignee,
 	}, nil
 }
 
-func (r *Repository) ListByTenant(ctx context.Context, tenantID string) ([]*domain.Subtask, error) {
-	rows, err := r.sql.SelectByTenant(ctx, tenantID)
+func (r *Repository) ListByCriteria(ctx context.Context, criteria domain.ListCriteria) ([]*domain.Subtask, error) {
+	rows, err := r.sql.SelectByCriteria(ctx, criteria)
 	if err != nil {
 		return nil, err
 	}
@@ -56,6 +58,7 @@ func (r *Repository) ListByTenant(ctx context.Context, tenantID string) ([]*doma
 			ID:       row.ID,
 			TenantID: row.TenantID,
 			TaskID:   row.TaskID,
+			Type:     row.SubtaskType,
 			Title:    row.Title,
 			Status:   row.Status,
 			Assignee: row.Assignee,
