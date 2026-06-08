@@ -12,6 +12,8 @@ import (
 	"hz-server/internal/config"
 	"hz-server/internal/database"
 	"hz-server/internal/downstream"
+	"hz-server/internal/logger"
+	"hz-server/internal/signature"
 )
 
 func main() {
@@ -23,7 +25,12 @@ func main() {
 		log.Fatalf("init config: %v", err)
 	}
 
-	ds, err := database.Init(context.Background(), cfg)
+	appLogger, err := logger.New(cfg.Logger)
+	if err != nil {
+		log.Fatalf("init logger: %v", err)
+	}
+
+	ds, err := database.Init(context.Background(), cfg.Database)
 	if err != nil {
 		log.Fatalf("init database: %v", err)
 	}
@@ -34,7 +41,16 @@ func main() {
 		log.Fatalf("init downstream clients: %v", err)
 	}
 
-	container, err := app.NewContainer(ds, downstreamClients)
+	signatureVerifier, err := signature.NewVerifier(signature.Config{
+		Enabled: cfg.Signature.Enabled,
+		Secret:  cfg.Signature.Secret,
+		Header:  cfg.Signature.Header,
+	})
+	if err != nil {
+		log.Fatalf("init signature verifier: %v", err)
+	}
+
+	container, err := app.NewContainer(ds, downstreamClients, appLogger, signatureVerifier)
 	if err != nil {
 		log.Fatalf("init container: %v", err)
 	}

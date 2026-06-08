@@ -4,6 +4,7 @@ package task
 
 import (
 	"github.com/cloudwego/hertz/pkg/app"
+	"hz-server/internal/middleware"
 )
 
 func rootMw() []app.HandlerFunc {
@@ -12,8 +13,9 @@ func rootMw() []app.HandlerFunc {
 }
 
 func _openapiMw() []app.HandlerFunc {
-	// your code...
-	return nil
+	return []app.HandlerFunc{
+		middleware.Trace(),
+	}
 }
 
 func _v1Mw() []app.HandlerFunc {

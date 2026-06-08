@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"hz-server/internal/apperror"
+	"hz-server/internal/logger"
 	"hz-server/internal/subtask/domain"
 )
 
@@ -32,16 +33,18 @@ type ListSubtasksInput struct {
 type service struct {
 	repo          Repository
 	starRocksRepo Repository
+	log           logger.Logger
 }
 
 func New(repo Repository) Service {
-	return NewWithStarRocks(repo, repo)
+	return NewWithStarRocks(repo, repo, nil)
 }
 
-func NewWithStarRocks(repo Repository, starRocksRepo Repository) Service {
+func NewWithStarRocks(repo Repository, starRocksRepo Repository, log logger.Logger) Service {
 	return &service{
 		repo:          repo,
 		starRocksRepo: starRocksRepo,
+		log:           log,
 	}
 }
 
@@ -49,6 +52,9 @@ func (s *service) GetSubtask(ctx context.Context, tenantID string, subtaskID int
 	subtask, err := s.repo.FindByTenantAndID(ctx, tenantID, subtaskID)
 	if err != nil {
 		return nil, toAppError(err)
+	}
+	if s.log != nil {
+		s.log.Infof(ctx, "subtask fetched tenant_id=%s subtask_id=%d", tenantID, subtaskID)
 	}
 	return subtask, nil
 }
@@ -61,6 +67,9 @@ func (s *service) ListSubtasks(ctx context.Context, input ListSubtasksInput) ([]
 	items, err := s.starRocksRepo.ListByCriteria(ctx, criteria)
 	if err != nil {
 		return nil, toAppError(err)
+	}
+	if s.log != nil {
+		s.log.Infof(ctx, "subtasks listed tenant_id=%s count=%d", input.TenantID, len(items))
 	}
 	return items, nil
 }

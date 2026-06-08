@@ -4,6 +4,8 @@ package subtask
 
 import (
 	"github.com/cloudwego/hertz/pkg/app"
+	internalapp "hz-server/internal/app"
+	"hz-server/internal/middleware"
 )
 
 func rootMw() []app.HandlerFunc {
@@ -12,8 +14,10 @@ func rootMw() []app.HandlerFunc {
 }
 
 func _consoleMw() []app.HandlerFunc {
-	// your code...
-	return nil
+	container := internalapp.MustDefault()
+	return []app.HandlerFunc{
+		middleware.Signature(container.SignatureVerifier, container.Logger),
+	}
 }
 
 func _v1Mw() []app.HandlerFunc {

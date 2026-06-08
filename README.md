@@ -20,6 +20,9 @@ internal/config              配置读取和校验
 internal/database            数据库连接、建表、seed
 internal/downstream          下游 client 初始化
 internal/app                 应用容器，装配 service/repo/sqlstore
+internal/logger              应用 logger 组件
+internal/signature           签名规则和校验器
+internal/middleware          可复用 Hertz middleware
 internal/task                task 领域代码
 internal/subtask             subtask 领域代码
 internal/taskrunner/client   下游 task runner 的手写 adapter
@@ -136,6 +139,51 @@ config/app.yaml
 
 业务层不主动创建 logger、metrics client 或签名 client。service 如果需要记录业务日志或打点，接收一个接口；具体实现由 `main/app` 装配。这样组件可以替换，测试时也可以注入 fake 实现。
 
+当前项目已经实现了一个轻量示例：
+
+```text
+config/app.yaml
+  -> logger.level/file_path/max_size_mb
+  -> signature.enabled/secret/header
+
+main.go
+  -> internal/logger.New
+  -> 默认同时输出 stdout 和文件
+  -> 文件输出使用 lumberjack 按 max_size_mb 分割
+  -> 内部完成 hlog.SetOutput/hlog.SetLevel
+  -> internal/signature.NewVerifier
+  -> app.NewContainer(..., logger, signatureVerifier)
+
+biz/router/console/**/middleware.go
+  -> internal/middleware.Signature(container.SignatureVerifier, container.Logger)
+
+biz/router/openapi/**/middleware.go
+  -> internal/middleware.Trace()
+  -> 从 Trace-Id 读取 trace_id
+  -> header 不存在时生成新的 trace_id
+  -> 把 trace_id 写回响应 Header
+  -> 写入 context.Context
+
+internal/task/service
+internal/subtask/service
+  -> 接收 logger interface
+  -> 从 context.Context 读取 trace_id，记录用例级日志
+```
+
+其中 `console` 路由会挂载签名 middleware，`openapi` 路由会挂载 trace middleware，用来演示不同入口可以有不同的横向策略。
+
+logger 的输出格式统一为：
+
+```text
+日期 trace_id=<trace_id> level=<级别> caller=<调用位置> msg=<实际日志内容>
+```
+
+例如：
+
+```text
+2026-06-07 23:59:59.123 trace_id=demo-trace-001 level=INFO caller=subtask.go:69 msg=subtasks listed tenant_id=tenant-a count=2
+```
+
 ## Main 启动顺序
 
 `main.go` 是整个程序的装配入口。它负责读取配置、初始化外部资源、创建容器，最后启动 Hertz server。
@@ -147,23 +195,32 @@ main.go
       -> 校验必填配置
       -> 返回 *config.Config
 
-  -> database.Init(ctx, cfg)
+  -> database.Init(ctx, cfg.Database)
       -> 打开主 SQLite: data/hz-server.db
       -> 打开模拟 StarRocks 的 SQLite: data/starrocks.db
       -> 建表
       -> 写入 demo 数据
       -> 返回 *database.DataSources
 
+  -> logger.New(cfg.Logger)
+      -> 创建应用 logger
+      -> 默认同时输出 stdout 和文件
+      -> file 输出用 lumberjack 按 max_size_mb 分割
+      -> 内部设置 Hertz hlog
+
   -> downstream.Init(cfg.Downstream)
       -> 读取下游 task_runner endpoint/timeout
       -> 创建 internal/taskrunner/client
       -> 返回 *downstream.Clients
 
-  -> app.NewContainer(dataSources, downstreamClients)
+  -> signature.NewVerifier(cfg.Signature)
+      -> 创建签名校验器
+
+  -> app.NewContainer(dataSources, downstreamClients, logger, signatureVerifier)
       -> 创建 sqlstore
       -> 创建 repo
       -> 创建 service
-      -> 把依赖注入 service
+      -> 把 repo/client/logger 等依赖注入 service
       -> 返回 *app.Container
 
   -> app.Init(container)
@@ -179,12 +236,20 @@ main.go
 ```go
 cfg, err := config.Init(*configPath)
 
-ds, err := database.Init(context.Background(), cfg)
+appLogger, err := logger.New(cfg.Logger)
+
+ds, err := database.Init(context.Background(), cfg.Database)
 defer ds.Close()
 
 downstreamClients, err := downstream.Init(cfg.Downstream)
 
-container, err := app.NewContainer(ds, downstreamClients)
+signatureVerifier, err := signature.NewVerifier(signature.Config{
+	Enabled: cfg.Signature.Enabled,
+	Secret:  cfg.Signature.Secret,
+	Header:  cfg.Signature.Header,
+})
+
+container, err := app.NewContainer(ds, downstreamClients, appLogger, signatureVerifier)
 app.Init(container)
 
 h := server.Default(server.WithHostPorts(cfg.Server.Addr))
@@ -206,10 +271,11 @@ h.Spin()
 config/app.yaml
   -> config.Init
   -> cfg
-  -> database.Init(cfg)
+  -> database.Init(cfg.Database)
   -> downstream.Init(cfg.Downstream)
-  -> app.NewContainer(ds, downstreamClients)
-  -> service.New(repo, client)
+  -> logger/signature 初始化
+  -> app.NewContainer(ds, downstreamClients, logger, signatureVerifier)
+  -> service.New(repo, client, logger)
   -> handler 调用 service
 ```
 
@@ -230,7 +296,7 @@ cfg.Downstream
   -> taskrunnerclient.New
   -> downstream.Clients{TaskRunner: client}
   -> app.NewContainer
-  -> taskservice.New(taskRepo, clients.TaskRunner)
+  -> taskservice.New(taskRepo, clients.TaskRunner, logger)
 ```
 
 所以 `task service` 拿到的是 `TaskRunner` 接口，不知道底层是 Hertz 生成 client、mock client，还是别的 RPC client。
@@ -293,7 +359,7 @@ type TaskRunner interface {
 ```text
 tasksqlstore.New(ds.DB)
   -> taskrepo.New(taskSQL)
-  -> taskservice.New(taskRepo, clients.TaskRunner)
+  -> taskservice.New(taskRepo, clients.TaskRunner, logger)
 ```
 
 这就是这个项目里的依赖倒置：内部 service 定义需要什么能力，外部 repo/client 去实现这些能力，最后由 `app.NewContainer` 负责装配。
@@ -513,6 +579,7 @@ handler   测 BindAndValidate、DTO 转换、响应 code/message/data
 internal/task/domain/task_test.go
 internal/subtask/domain/subtask_test.go
 internal/taskrunner/client/client_test.go
+internal/signature/signature_test.go
 ```
 
 常规验证命令：
@@ -537,13 +604,23 @@ config/app.yaml
 server:
   addr: ":8889"
 
-database:
-  driver: sqlite3
-  dsn: data/hz-server.db
+logger:
+  level: info
+  file_path: logs/app.log
+  max_size_mb: 100
 
-starrocks:
-  driver: sqlite3
-  dsn: data/starrocks.db
+database:
+  main:
+    driver: sqlite3
+    dsn: data/hz-server.db
+  starrocks:
+    driver: sqlite3
+    dsn: data/starrocks.db
+
+signature:
+  enabled: true
+  secret: demo-secret
+  header: X-Signature
 
 downstream:
   task_runner:
@@ -568,12 +645,26 @@ data/starrocks.db
 
 ## 示例接口
 
+`console` 路由默认启用了签名 middleware。签名串规则是：
+
+```text
+HMAC_SHA256(method + "\n" + path, signature.secret)
+```
+
+可以用下面的 shell 函数生成 header：
+
 ```bash
-curl -s 'http://127.0.0.1:8889/console/v1/tasks/1001?tenant_id=tenant-a'
-curl -s -X POST 'http://127.0.0.1:8889/console/v1/tasks/1001/start?tenant_id=tenant-a'
-curl -s 'http://127.0.0.1:8889/openapi/v1/tasks/1001?tenant_id=tenant-a'
-curl -s 'http://127.0.0.1:8889/console/v1/subtasks?tenant_id=tenant-a&task_id=1001'
-curl -s 'http://127.0.0.1:8889/console/v1/subtasks?tenant_id=tenant-a&subtask_type=metric'
-curl -s 'http://127.0.0.1:8889/console/v1/subtasks/5001?tenant_id=tenant-a'
-curl -s 'http://127.0.0.1:8889/openapi/v1/subtasks/5001?tenant_id=tenant-a'
+sig() {
+  printf '%s\n%s' "$1" "$2" | openssl dgst -sha256 -hmac 'demo-secret' -hex | awk '{print $2}'
+}
+```
+
+```bash
+curl -s -H "X-Signature: $(sig GET /console/v1/tasks/1001)" 'http://127.0.0.1:8889/console/v1/tasks/1001?tenant_id=tenant-a'
+curl -s -X POST -H "X-Signature: $(sig POST /console/v1/tasks/1001/start)" 'http://127.0.0.1:8889/console/v1/tasks/1001/start?tenant_id=tenant-a'
+curl -s -H 'Trace-Id: demo-trace-001' 'http://127.0.0.1:8889/openapi/v1/tasks/1001?tenant_id=tenant-a'
+curl -s -H "X-Signature: $(sig GET /console/v1/subtasks)" 'http://127.0.0.1:8889/console/v1/subtasks?tenant_id=tenant-a&task_id=1001'
+curl -s -H "X-Signature: $(sig GET /console/v1/subtasks)" 'http://127.0.0.1:8889/console/v1/subtasks?tenant_id=tenant-a&subtask_type=metric'
+curl -s -H "X-Signature: $(sig GET /console/v1/subtasks/5001)" 'http://127.0.0.1:8889/console/v1/subtasks/5001?tenant_id=tenant-a'
+curl -s -H 'Trace-Id: demo-trace-002' 'http://127.0.0.1:8889/openapi/v1/subtasks/5001?tenant_id=tenant-a'
 ```

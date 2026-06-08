@@ -5,6 +5,8 @@ import (
 
 	"hz-server/internal/database"
 	"hz-server/internal/downstream"
+	"hz-server/internal/logger"
+	"hz-server/internal/signature"
 	subtaskrepo "hz-server/internal/subtask/repo"
 	subtaskservice "hz-server/internal/subtask/service"
 	subtasksqlstore "hz-server/internal/subtask/sqlstore"
@@ -14,8 +16,10 @@ import (
 )
 
 type Container struct {
-	TaskService    taskservice.Service
-	SubtaskService subtaskservice.Service
+	Logger            logger.Logger
+	SignatureVerifier signature.Verifier
+	TaskService       taskservice.Service
+	SubtaskService    subtaskservice.Service
 }
 
 var Default *Container
@@ -31,7 +35,7 @@ func MustDefault() *Container {
 	return Default
 }
 
-func NewContainer(ds *database.DataSources, clients *downstream.Clients) (*Container, error) {
+func NewContainer(ds *database.DataSources, clients *downstream.Clients, log logger.Logger, verifier signature.Verifier) (*Container, error) {
 	if ds == nil {
 		return nil, fmt.Errorf("data sources are required")
 	}
@@ -47,6 +51,12 @@ func NewContainer(ds *database.DataSources, clients *downstream.Clients) (*Conta
 	if clients.TaskRunner == nil {
 		return nil, fmt.Errorf("task runner client is required")
 	}
+	if log == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	if verifier == nil {
+		return nil, fmt.Errorf("signature verifier is required")
+	}
 
 	taskSQL := tasksqlstore.New(ds.DB)
 	taskRepo := taskrepo.New(taskSQL)
@@ -58,7 +68,9 @@ func NewContainer(ds *database.DataSources, clients *downstream.Clients) (*Conta
 	starRocksSubtaskRepo := subtaskrepo.New(starRocksSubtaskSQL)
 
 	return &Container{
-		TaskService:    taskservice.New(taskRepo, clients.TaskRunner),
-		SubtaskService: subtaskservice.NewWithStarRocks(subtaskRepo, starRocksSubtaskRepo),
+		Logger:            log,
+		SignatureVerifier: verifier,
+		TaskService:       taskservice.New(taskRepo, clients.TaskRunner, log),
+		SubtaskService:    subtaskservice.NewWithStarRocks(subtaskRepo, starRocksSubtaskRepo, log),
 	}, nil
 }

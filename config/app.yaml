@@ -1,13 +1,23 @@
 server:
   addr: ":8889"
 
-database:
-  driver: sqlite3
-  dsn: data/hz-server.db
+logger:
+  level: info
+  file_path: logs/app.log
+  max_size_mb: 100
 
-starrocks:
-  driver: sqlite3
-  dsn: data/starrocks.db
+database:
+  main:
+    driver: sqlite3
+    dsn: data/hz-server.db
+  starrocks:
+    driver: sqlite3
+    dsn: data/starrocks.db
+
+signature:
+  enabled: true
+  secret: demo-secret
+  header: X-Signature
 
 downstream:
   task_runner:

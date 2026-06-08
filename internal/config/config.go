@@ -9,8 +9,9 @@ import (
 
 type Config struct {
 	Server     ServerConfig     `yaml:"server"`
+	Logger     LoggerConfig     `yaml:"logger"`
 	Database   DatabaseConfig   `yaml:"database"`
-	StarRocks  DatabaseConfig   `yaml:"starrocks"`
+	Signature  SignatureConfig  `yaml:"signature"`
 	Downstream DownstreamConfig `yaml:"downstream"`
 }
 
@@ -18,9 +19,26 @@ type ServerConfig struct {
 	Addr string `yaml:"addr"`
 }
 
+type LoggerConfig struct {
+	Level     string `yaml:"level"`
+	FilePath  string `yaml:"file_path"`
+	MaxSizeMB int    `yaml:"max_size_mb"`
+}
+
 type DatabaseConfig struct {
+	Main      DataSourceConfig `yaml:"main"`
+	StarRocks DataSourceConfig `yaml:"starrocks"`
+}
+
+type DataSourceConfig struct {
 	Driver string `yaml:"driver"`
 	DSN    string `yaml:"dsn"`
+}
+
+type SignatureConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Secret  string `yaml:"secret"`
+	Header  string `yaml:"header"`
 }
 
 type DownstreamConfig struct {
@@ -67,17 +85,32 @@ func Load(path string) (*Config, error) {
 	if cfg.Server.Addr == "" {
 		return nil, fmt.Errorf("server.addr is required")
 	}
-	if cfg.Database.Driver == "" {
-		return nil, fmt.Errorf("database.driver is required")
+	if cfg.Logger.Level == "" {
+		cfg.Logger.Level = "info"
 	}
-	if cfg.Database.DSN == "" {
-		return nil, fmt.Errorf("database.dsn is required")
+	if cfg.Logger.FilePath == "" {
+		return nil, fmt.Errorf("logger.file_path is required")
 	}
-	if cfg.StarRocks.Driver == "" {
-		return nil, fmt.Errorf("starrocks.driver is required")
+	if cfg.Logger.MaxSizeMB <= 0 {
+		return nil, fmt.Errorf("logger.max_size_mb must be positive")
 	}
-	if cfg.StarRocks.DSN == "" {
-		return nil, fmt.Errorf("starrocks.dsn is required")
+	if cfg.Database.Main.Driver == "" {
+		return nil, fmt.Errorf("database.main.driver is required")
+	}
+	if cfg.Database.Main.DSN == "" {
+		return nil, fmt.Errorf("database.main.dsn is required")
+	}
+	if cfg.Database.StarRocks.Driver == "" {
+		return nil, fmt.Errorf("database.starrocks.driver is required")
+	}
+	if cfg.Database.StarRocks.DSN == "" {
+		return nil, fmt.Errorf("database.starrocks.dsn is required")
+	}
+	if cfg.Signature.Enabled && cfg.Signature.Secret == "" {
+		return nil, fmt.Errorf("signature.secret is required when signature is enabled")
+	}
+	if cfg.Signature.Header == "" {
+		cfg.Signature.Header = "X-Signature"
 	}
 	if cfg.Downstream.TaskRunner.Endpoint == "" {
 		return nil, fmt.Errorf("downstream.task_runner.endpoint is required")

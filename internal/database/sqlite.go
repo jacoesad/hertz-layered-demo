@@ -17,12 +17,8 @@ type DataSources struct {
 	StarRocksDB *sql.DB
 }
 
-func Init(ctx context.Context, cfg *config.Config) (*DataSources, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config is required")
-	}
-
-	db, err := Open(ctx, cfg.Database)
+func Init(ctx context.Context, cfg config.DatabaseConfig) (*DataSources, error) {
+	db, err := Open(ctx, cfg.Main)
 	if err != nil {
 		return nil, err
 	}
@@ -52,15 +48,15 @@ func (d *DataSources) Close() error {
 	return nil
 }
 
-func Open(ctx context.Context, cfg config.DatabaseConfig) (*sql.DB, error) {
+func Open(ctx context.Context, cfg config.DataSourceConfig) (*sql.DB, error) {
 	return open(ctx, cfg, seed)
 }
 
-func OpenStarRocks(ctx context.Context, cfg config.DatabaseConfig) (*sql.DB, error) {
+func OpenStarRocks(ctx context.Context, cfg config.DataSourceConfig) (*sql.DB, error) {
 	return open(ctx, cfg, seedStarRocks)
 }
 
-func open(ctx context.Context, cfg config.DatabaseConfig, seedFunc func(context.Context, *sql.DB) error) (*sql.DB, error) {
+func open(ctx context.Context, cfg config.DataSourceConfig, seedFunc func(context.Context, *sql.DB) error) (*sql.DB, error) {
 	if cfg.Driver != "sqlite3" {
 		return nil, fmt.Errorf("unsupported database driver %q", cfg.Driver)
 	}
